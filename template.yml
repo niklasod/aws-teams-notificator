@@ -1,4 +1,5 @@
 AWSTemplateFormatVersion: 2010-09-09
+Transform: AWS::Serverless-2016-10-31
 Description: "Creates Lambda and SNS topic to send notifications to a Teams channel"
 Parameters:
   SNSTopicName:
@@ -28,42 +29,13 @@ Resources:
 
 
   TeamsNotificator:
-    Type: AWS::Lambda::Function
+    Type: AWS::Serverless::Function
     Properties:
-      Code:
-        ZipFile: |
-          import urllib3
-          import json
-          import os
-          http = urllib3.PoolManager()
-
-          def lambda_handler(event, context):
-            url = os.environ['TEAMS_URL']
-            send_notification(url, event)
-
-          def send_notification(url, event):
-            event_message = json.loads(event['Records'][0]['Sns']['Message'])
-            accountId = event_message["account"]
-            pipeline = event_message["detail"]["pipeline"]
-            state = event_messge["detail"]["state"]
-            time = event_message["time"]
-            message = '''
-              Pipeline: {pipeline}
-              Account: {account}
-              Event: {event}
-              Time: {time}
-            '''.format(pipeline=pipeline, account=accountId, event=state, time=time)
-            msg = {
-              "text": message
-            }
-
-            encoded_msg = json.dumps(msg).encode('utf-8')
-            response = http.request('POST', url, body=encoded_msg)
-            print(response)
-    
+      CodeUri: ./src/
+      Handler: function.lambda_handler
 
 
-      Handler: index.lambda_handler
+      #Handler: index.lambda_handler
       Environment:
         Variables:
           TEAMS_URL: !Ref TeamsUrl
