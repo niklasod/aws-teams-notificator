@@ -1,0 +1,99 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: "Creates Lambda and SNS topic to send notifications to a Teams channel"
+Parameters:
+  SNSTopicName:
+    Type: String
+    Default: teams-notification-topic
+  
+  TeamsUrl:
+    Type: String
+
+
+Resources:
+  LambdaExecutionRole:
+    Type: AWS::IAM:Role
+    Properties:
+      RoleName: TeamsNotificationLambdaExecutionRole
+      ManagedPolicyArns:
+        - arn:aws:iam:aws:policy/service-role/AWSLambdaBasicExecutionRole
+      AssumeRolePolicyDocyment:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: 
+              Service: 
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+
+
+  TeamsNotificator:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        ZipFile: |
+          import urllib3
+          import json
+          import os
+          http = urllib3.PoolManager()
+
+          def lambda_handler(event, context):
+            url = os.environ['TEAMS_URL']
+            send_notification(url, event)
+
+          def send_notification(url, event):
+            event_message = json.loads(event['Records'][0]['Sns']['Message'])
+            accountId = event_message["account"]
+            pipeline = event_message["detail"]["pipeline"]
+            state = event_messge["detail"]["state"]
+            time = event_message["time"]
+            message = '''
+              Pipeline: {pipeline}
+              Account: {account}
+              Event: {event}
+              Time: {time}
+            '''.format(pipeline=pipeline, account=accountId, event=state, time=time)
+            msg = {
+              "text": message
+            }
+
+            encoded_msg = json.dumps(msg).encode('utf-8')
+            response = http.request('POST', url, body=encoded_msg)
+            print(response)
+    
+
+
+      Handler: index.lambda_handler
+      Environment:
+        Variables:
+          TEAMS_URL: !Ref TeamsUrl
+      MemorySize: 128
+      Runtime: python3.7
+      Timeout: 30
+      Role: !GetAtt LambdaExecutionRole.Arn
+  
+
+
+  NotificatorSNSPermission:
+    Type: AWS::Lambda::Permission
+    Properites:
+      FunctionName: !GetAtt TeamsNotificator.Arn
+      Action: lambda.InvokeFunction
+      Principal: sns.amazonaws.com
+      SourceArn: !Ref TeamsNotificationTopic
+
+
+  TeamsNotificationTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Ref SNSTopicName
+
+  TeamsNotificationTopicPolicy:
+    Type: AWS::SNS::Subscription
+    DependsOn:
+      - TeamsNotificator
+      - TeamsNotificationTopic
+    Properties:
+      Protocol: lambda
+      Endpoint: !GetAtt TeamsNotificator.Arn
+      TopicArn: !Ref TeamsNotificationTopic
